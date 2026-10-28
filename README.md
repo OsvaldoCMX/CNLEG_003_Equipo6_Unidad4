@@ -13,7 +13,6 @@ Actividad 4: implementación del núcleo de negocio (entidades DDD, Specificatio
 |---|---|
 | Jesus Eduardo Moreno Osoria | 2136063 |
 | Osvaldo Salvador Cárdenas Mejorado | 2141553 |
-| Abraham Sandoval De León | 2136604 |
 
 ---
 
