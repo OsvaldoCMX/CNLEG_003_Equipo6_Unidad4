@@ -1,0 +1,1259 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TechStore U4 – Núcleo de negocio",
+    "description": "\nNúcleo de negocio de **TechStore** (CLN · Unidad 4 · FIME UANL).\n\n* Datos en memoria cargados de `datos/*.csv` (16 pedidos, todos en `DRAFT`).\n* Máquina de estados: `DRAFT → CONFIRMED → SHIPPED → DELIVERED`,\n  `CONFIRMED → CANCELLED`, `SHIPPED → RETURNED`.\n* Errores de dominio → HTTP: **404** no existe · **409** transición inválida ·\n  **422** regla de negocio/datos inválidos.\n* Cada error responde `{\"error\": \"<código>\", \"mensaje\": \"<texto para el cliente>\"}`;\n  el mensaje está en español sencillo y no muestra códigos internos de estado.\n* Usa `POST /admin/reset` para volver al estado inicial entre pruebas.\n",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/orders": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Listar pedidos",
+        "operationId": "list_orders_orders_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummaryDTO"
+                  },
+                  "type": "array",
+                  "title": "Response List Orders Orders Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Crear pedido vacío (pendiente de confirmar)",
+        "operationId": "create_order_orders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Consultar un pedido",
+        "operationId": "get_order_orders__order_id__get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/items": {
+      "post": {
+        "tags": [
+          "Pedidos"
+        ],
+        "summary": "Agregar artículo (máx. 20 unidades por pedido)",
+        "operationId": "add_item_orders__order_id__items_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Se viola una regla de negocio (datos inválidos)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/confirm": {
+      "post": {
+        "tags": [
+          "Ciclo de vida"
+        ],
+        "summary": "Confirmar pedido",
+        "description": "Transición técnica: DRAFT → CONFIRMED. Requiere artículos y cliente activo.",
+        "operationId": "confirm_order_orders__order_id__confirm_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Se viola una regla de negocio (datos inválidos)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/ship": {
+      "post": {
+        "tags": [
+          "Ciclo de vida"
+        ],
+        "summary": "Enviar pedido (requiere número de guía)",
+        "description": "Transición técnica: CONFIRMED → SHIPPED.",
+        "operationId": "ship_order_orders__order_id__ship_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ShipRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Se viola una regla de negocio (datos inválidos)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/cancel": {
+      "post": {
+        "tags": [
+          "Ciclo de vida"
+        ],
+        "summary": "Cancelar pedido (requiere motivo)",
+        "description": "Transición técnica: CONFIRMED → CANCELLED.",
+        "operationId": "cancel_order_orders__order_id__cancel_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Se viola una regla de negocio (datos inválidos)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/deliver": {
+      "post": {
+        "tags": [
+          "Ciclo de vida"
+        ],
+        "summary": "Marcar pedido como entregado",
+        "description": "Transición técnica: SHIPPED → DELIVERED.",
+        "operationId": "deliver_order_orders__order_id__deliver_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/return": {
+      "post": {
+        "tags": [
+          "Ciclo de vida"
+        ],
+        "summary": "Registrar devolución del pedido",
+        "description": "Transición técnica: SHIPPED → RETURNED.",
+        "operationId": "return_order_orders__order_id__return_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReturnRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Transición no permitida en el estado actual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{order_id}/discount": {
+      "get": {
+        "tags": [
+          "Descuentos"
+        ],
+        "summary": "Evaluar descuento (10 % VIP / 5 % monto alto)",
+        "operationId": "evaluate_discount_orders__order_id__discount_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Id del pedido",
+              "examples": [
+                "O001"
+              ],
+              "title": "Order Id"
+            },
+            "description": "Id del pedido"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscountDTO"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "El pedido, cliente o producto no existe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDTO"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "Eventos"
+        ],
+        "summary": "Domain Events publicados",
+        "operationId": "published_events_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EventDTO"
+                  },
+                  "type": "array",
+                  "title": "Response Published Events Events Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "Eventos"
+        ],
+        "summary": "Correos simulados enviados por el suscriptor EmailNotifier",
+        "operationId": "notifications_notifications_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array",
+                  "title": "Response Notifications Notifications Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reset": {
+      "post": {
+        "tags": [
+          "Utilidades"
+        ],
+        "summary": "Recargar los 16 pedidos del CSV (estado inicial)",
+        "operationId": "reset_admin_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddItemRequest": {
+        "properties": {
+          "sku": {
+            "type": "string",
+            "title": "Sku",
+            "description": "SKU de productos.csv",
+            "examples": [
+              "SKU001"
+            ]
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity",
+            "description": "Unidades a agregar (el dominio exige > 0)",
+            "examples": [
+              2
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "sku",
+          "quantity"
+        ],
+        "title": "AddItemRequest"
+      },
+      "CancelRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Motivo de cancelación (obligatorio para el dominio)"
+          }
+        },
+        "type": "object",
+        "title": "CancelRequest",
+        "examples": [
+          {
+            "reason": "El cliente cambió de opinión"
+          }
+        ]
+      },
+      "CreateOrderRequest": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id",
+            "description": "Id del cliente en clientes.csv",
+            "examples": [
+              "C001"
+            ]
+          },
+          "has_promotion": {
+            "type": "boolean",
+            "title": "Has Promotion",
+            "description": "¿El pedido tiene una promoción activa?",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id"
+        ],
+        "title": "CreateOrderRequest"
+      },
+      "DiscountDTO": {
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "percentage": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Percentage",
+            "examples": [
+              "10"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Explicación para el cliente"
+          },
+          "rule": {
+            "type": "string",
+            "title": "Rule",
+            "description": "Regla técnica (Specification) que se aplicó"
+          },
+          "total_before": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Before"
+          },
+          "discount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Discount"
+          },
+          "total_after": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total After"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Checks",
+            "description": "Condiciones evaluadas: ✔ se cumple / ✘ no se cumple"
+          }
+        },
+        "type": "object",
+        "required": [
+          "order_id",
+          "percentage",
+          "message",
+          "rule",
+          "total_before",
+          "discount",
+          "total_after",
+          "checks"
+        ],
+        "title": "DiscountDTO"
+      },
+      "ErrorDTO": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "description": "Código del error (para programas)",
+            "examples": [
+              "InvalidOrderTransition"
+            ]
+          },
+          "mensaje": {
+            "type": "string",
+            "title": "Mensaje",
+            "description": "Mensaje para el cliente, en lenguaje sencillo",
+            "examples": [
+              "El pedido O001 ya fue confirmado; no es necesario confirmarlo otra vez."
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "mensaje"
+        ],
+        "title": "ErrorDTO"
+      },
+      "EventDTO": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Nombre técnico del Domain Event",
+            "examples": [
+              "OrderConfirmed"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Qué pasó, en lenguaje sencillo",
+            "examples": [
+              "Pedido confirmado"
+            ]
+          },
+          "order_id": {
+            "type": "string",
+            "title": "Order Id"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data",
+            "description": "Datos propios del evento"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "order_id",
+          "occurred_at"
+        ],
+        "title": "EventDTO"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OrderDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "examples": [
+              "O001"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Código interno del estado (para programas)",
+            "examples": [
+              "DRAFT"
+            ]
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label",
+            "description": "Estado para mostrar al cliente",
+            "examples": [
+              "Pendiente de confirmar"
+            ]
+          },
+          "units": {
+            "type": "integer",
+            "title": "Units"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "MXN"
+          },
+          "customer_vip": {
+            "type": "boolean",
+            "title": "Customer Vip"
+          },
+          "customer_active": {
+            "type": "boolean",
+            "title": "Customer Active"
+          },
+          "has_promotion": {
+            "type": "boolean",
+            "title": "Has Promotion"
+          },
+          "tracking_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracking Number"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
+          "allowed_transitions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Transitions",
+            "description": "Estados a los que puede pasar desde el actual"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItemDTO"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventDTO"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "status",
+          "status_label",
+          "units",
+          "total",
+          "customer_vip",
+          "customer_active",
+          "has_promotion",
+          "allowed_transitions",
+          "items",
+          "events"
+        ],
+        "title": "OrderDTO"
+      },
+      "OrderItemDTO": {
+        "properties": {
+          "sku": {
+            "type": "string",
+            "title": "Sku"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Price"
+          },
+          "subtotal": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Subtotal"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sku",
+          "quantity",
+          "unit_price",
+          "subtotal"
+        ],
+        "title": "OrderItemDTO"
+      },
+      "OrderSummaryDTO": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "examples": [
+              "O001"
+            ]
+          },
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Código interno del estado (para programas)",
+            "examples": [
+              "DRAFT"
+            ]
+          },
+          "status_label": {
+            "type": "string",
+            "title": "Status Label",
+            "description": "Estado para mostrar al cliente",
+            "examples": [
+              "Pendiente de confirmar"
+            ]
+          },
+          "units": {
+            "type": "integer",
+            "title": "Units"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "MXN"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "customer_id",
+          "status",
+          "status_label",
+          "units",
+          "total"
+        ],
+        "title": "OrderSummaryDTO"
+      },
+      "ReturnRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Motivo de la devolución (opcional)"
+          }
+        },
+        "type": "object",
+        "title": "ReturnRequest"
+      },
+      "ShipRequest": {
+        "properties": {
+          "tracking_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracking Number",
+            "description": "Número de guía (obligatorio para el dominio)"
+          }
+        },
+        "type": "object",
+        "title": "ShipRequest",
+        "examples": [
+          {
+            "tracking_number": "TRK-0001"
+          }
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Pedidos",
+      "description": "Consulta y armado de pedidos"
+    },
+    {
+      "name": "Ciclo de vida",
+      "description": "Transiciones de la máquina de estados"
+    },
+    {
+      "name": "Descuentos",
+      "description": "Evaluación con Specification Pattern"
+    },
+    {
+      "name": "Eventos",
+      "description": "Domain Events publicados y notificaciones"
+    },
+    {
+      "name": "Utilidades",
+      "description": "Apoyo para pruebas"
+    }
+  ]
+}

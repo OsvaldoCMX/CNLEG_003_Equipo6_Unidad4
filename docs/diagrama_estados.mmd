@@ -1,0 +1,15 @@
+stateDiagram-v2
+    direction LR
+    [*] --> DRAFT : Order(customer, id)
+    DRAFT --> CONFIRMED : confirm()<br/>requiere artículos y cliente activo<br/>⟶ OrderConfirmed
+    CONFIRMED --> SHIPPED : ship(guía)<br/>requiere número de guía<br/>⟶ OrderShipped
+    CONFIRMED --> CANCELLED : cancel(motivo)<br/>requiere motivo<br/>⟶ OrderCancelled
+    SHIPPED --> DELIVERED : deliver()<br/>⟶ OrderDelivered
+    SHIPPED --> RETURNED : return_order()<br/>⟶ OrderReturned
+    DELIVERED --> [*]
+    CANCELLED --> [*]
+    RETURNED --> [*]
+    note right of DRAFT
+        add_item() solo en DRAFT
+        máximo 20 unidades por pedido
+    end note
